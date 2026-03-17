@@ -17,7 +17,6 @@ import {
 interface MonthData {
   month: number;
   year: number;
-  monthName: string;
   totalHours: number;
   payRate: number;
   wages: number;
@@ -34,7 +33,7 @@ const MONTH_NAMES = [
 
 export default function DashboardPage() {
   const { data: session } = useSession();
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year, setYear] = useState(2025);
   const [monthData, setMonthData] = useState<MonthData[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingRate, setEditingRate] = useState<number | null>(null);
@@ -43,68 +42,18 @@ export default function DashboardPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [entriesRes, reimbRes, settingsRes] = await Promise.all([
-        fetch(`/api/time-entries?year=${year}`),
-        fetch(`/api/reimbursements?year=${year}`),
-        fetch("/api/monthly-settings"),
-      ]);
-
-      const entries = await entriesRes.json();
-      const reimbursements = await reimbRes.json();
-      const settings = await settingsRes.json();
-
-      const data: MonthData[] = [];
-
-      for (let m = 1; m <= 12; m++) {
-        const monthEntries = Array.isArray(entries)
-          ? entries.filter((e: { date: string }) => {
-              const d = new Date(e.date);
-              return d.getMonth() + 1 === m && d.getFullYear() === year;
-            })
-          : [];
-
-        const monthReimb = Array.isArray(reimbursements)
-          ? reimbursements.filter((r: { date: string }) => {
-              const d = new Date(r.date);
-              return d.getMonth() + 1 === m && d.getFullYear() === year;
-            })
-          : [];
-
-        const setting = Array.isArray(settings)
-          ? settings.find(
-              (s: { year: number; month: number }) => s.year === year && s.month === m
-            )
-          : null;
-
-        const totalMinutes = monthEntries.reduce(
-          (sum: number, e: { durationMin: number }) => sum + e.durationMin,
-          0
-        );
-        const totalHours = totalMinutes / 60;
-        const payRate = setting?.payRate ?? 20;
-        const wages = totalHours * payRate;
-        const reimbTotal = monthReimb.reduce(
-          (sum: number, r: { amount: number }) => sum + r.amount,
-          0
-        );
-
-        data.push({
-          month: m,
-          year,
-          monthName: MONTH_NAMES[m - 1],
-          totalHours: Math.round(totalHours * 100) / 100,
-          payRate,
-          wages: Math.round(wages * 100) / 100,
-          reimbursements: Math.round(reimbTotal * 100) / 100,
-          total: Math.round((wages + reimbTotal) * 100) / 100,
-          isPaid: setting?.isPaid ?? false,
-          settingId: setting?.id,
-        });
+      const res = await fetch(`/api/dashboard?year=${year}`);
+      if (!res.ok) {
+        console.error("Dashboard API error:", res.status);
+        setMonthData([]);
+        setLoading(false);
+        return;
       }
-
+      const data = await res.json();
       setMonthData(data);
     } catch (err) {
       console.error("Failed to fetch data:", err);
+      setMonthData([]);
     }
     setLoading(false);
   }, [year]);
@@ -143,7 +92,7 @@ export default function DashboardPage() {
   const chartData = monthData
     .filter((m) => m.wages > 0 || m.reimbursements > 0)
     .map((m) => ({
-      name: m.monthName,
+      name: MONTH_NAMES[m.month - 1],
       Wages: m.wages,
       Reimbursements: m.reimbursements,
     }));

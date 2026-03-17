@@ -2,19 +2,18 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  const token =
-    request.cookies.get("authjs.session-token")?.value ||
-    request.cookies.get("__Secure-authjs.session-token")?.value ||
-    request.cookies.get("next-auth.session-token")?.value ||
-    request.cookies.get("__Secure-next-auth.session-token")?.value;
+  // Check all possible NextAuth v5 cookie names
+  const hasSession = request.cookies.getAll().some(
+    (c) => c.name.includes("authjs.session-token") || c.name.includes("next-auth.session-token")
+  );
 
   const isLoginPage = request.nextUrl.pathname === "/login";
 
-  if (!token && !isLoginPage) {
+  if (!hasSession && !isLoginPage) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (token && isLoginPage) {
+  if (hasSession && isLoginPage) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
