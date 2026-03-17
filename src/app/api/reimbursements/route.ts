@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -9,11 +10,22 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const month = searchParams.get("month");
   const year = searchParams.get("year");
+  const startDate = searchParams.get("startDate");
+  const endDate = searchParams.get("endDate");
   const search = searchParams.get("search");
+  const tags = searchParams.get("tags");
 
-  const where: Record<string, unknown> = {};
+  const where: Prisma.ReimbursementWhereInput = {};
 
-  if (month && year) {
+  if (startDate || endDate) {
+    where.date = {};
+    if (startDate) where.date.gte = new Date(startDate);
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setDate(end.getDate() + 1);
+      where.date.lt = end;
+    }
+  } else if (month && year) {
     const start = new Date(parseInt(year), parseInt(month) - 1, 1);
     const end = new Date(parseInt(year), parseInt(month), 1);
     where.date = { gte: start, lt: end };
@@ -25,6 +37,13 @@ export async function GET(req: NextRequest) {
 
   if (search) {
     where.description = { contains: search, mode: "insensitive" };
+  }
+
+  if (tags) {
+    const tagList = tags.split(",").filter(Boolean);
+    if (tagList.length > 0) {
+      where.tags = { hasSome: tagList };
+    }
   }
 
   const reimbursements = await prisma.reimbursement.findMany({

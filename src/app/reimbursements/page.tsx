@@ -18,13 +18,24 @@ interface Reimbursement {
   user: { name: string };
 }
 
+type ViewMode = "month" | "dateRange" | "all";
+
 export default function ReimbursementsPage() {
   const { data: session } = useSession();
   const [items, setItems] = useState<Reimbursement[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Filter state
+  const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [month, setMonth] = useState(new Date().getMonth() + 1);
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year, setYear] = useState(2025);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [search, setSearch] = useState("");
+  const [filterTags, setFilterTags] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -41,15 +52,23 @@ export default function ReimbursementsPage() {
   const fetchItems = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
-    params.set("month", month.toString());
-    params.set("year", year.toString());
+
+    if (viewMode === "month") {
+      params.set("month", month.toString());
+      params.set("year", year.toString());
+    } else if (viewMode === "dateRange") {
+      if (startDate) params.set("startDate", startDate);
+      if (endDate) params.set("endDate", endDate);
+    }
+
     if (search) params.set("search", search);
+    if (filterTags.length > 0) params.set("tags", filterTags.join(","));
 
     const res = await fetch(`/api/reimbursements?${params}`);
     const data = await res.json();
     setItems(Array.isArray(data) ? data : []);
     setLoading(false);
-  }, [month, year, search]);
+  }, [viewMode, month, year, startDate, endDate, search, filterTags]);
 
   useEffect(() => {
     fetchItems();
@@ -116,46 +135,41 @@ export default function ReimbursementsPage() {
     fetchItems();
   }
 
+  function clearFilters() {
+    setSearch("");
+    setFilterTags([]);
+    setStartDate("");
+    setEndDate("");
+    setViewMode("month");
+    setMonth(new Date().getMonth() + 1);
+    setYear(2025);
+  }
+
   const totalAmount = items.reduce((s, r) => s + r.amount, 0);
+  const hasActiveFilters = search || filterTags.length > 0 || viewMode !== "month";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {toast && (
         <div className="fixed top-20 right-4 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm shadow-lg z-50">
           {toast}
         </div>
       )}
 
+      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-slate-900">Reimbursements</h1>
-        <div className="flex flex-wrap items-center gap-3">
-          <select
-            value={month}
-            onChange={(e) => setMonth(parseInt(e.target.value))}
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+              showFilters || hasActiveFilters
+                ? "bg-indigo-50 border-indigo-300 text-indigo-700"
+                : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+            }`}
           >
-            {Array.from({ length: 12 }, (_, i) => (
-              <option key={i + 1} value={i + 1}>
-                {format(new Date(2024, i, 1), "MMMM")}
-              </option>
-            ))}
-          </select>
-          <select
-            value={year}
-            onChange={(e) => setYear(parseInt(e.target.value))}
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          >
-            {[2024, 2025, 2026, 2027].map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-          <input
-            type="text"
-            placeholder="Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-40"
-          />
+            Filters {hasActiveFilters && `(active)`}
+          </button>
           {canEdit && (
             <button
               onClick={openAdd}
@@ -167,6 +181,118 @@ export default function ReimbursementsPage() {
         </div>
       </div>
 
+      {/* Filter Panel */}
+      {showFilters && (
+        <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
+          {/* View Mode Tabs */}
+          <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+            {([
+              ["month", "Month"],
+              ["dateRange", "Date Range"],
+              ["all", "All Time"],
+            ] as [ViewMode, string][]).map(([mode, label]) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === mode
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-end gap-4">
+            {viewMode === "month" && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Month</label>
+                  <select
+                    value={month}
+                    onChange={(e) => setMonth(parseInt(e.target.value))}
+                    className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i + 1} value={i + 1}>
+                        {format(new Date(2024, i, 1), "MMMM")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Year</label>
+                  <select
+                    value={year}
+                    onChange={(e) => setYear(parseInt(e.target.value))}
+                    className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {[2024, 2025, 2026, 2027].map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+
+            {viewMode === "dateRange" && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Search</label>
+              <input
+                type="text"
+                placeholder="Search descriptions..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-48"
+              />
+            </div>
+
+            <div className="min-w-[200px]">
+              <label className="block text-xs font-medium text-slate-500 mb-1">Filter by Tags</label>
+              <MultiSelect
+                options={REIMBURSEMENT_TAGS}
+                selected={filterTags}
+                onChange={setFilterTags}
+                placeholder="Any tag..."
+              />
+            </div>
+
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="text-sm text-slate-500 hover:text-slate-700 underline pb-2"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="flex gap-4">
         <div className="bg-white rounded-lg border border-slate-200 px-4 py-3">
@@ -174,7 +300,7 @@ export default function ReimbursementsPage() {
           <span className="font-semibold">{items.length}</span>
         </div>
         <div className="bg-white rounded-lg border border-slate-200 px-4 py-3">
-          <span className="text-sm text-slate-500">Monthly Total: </span>
+          <span className="text-sm text-slate-500">Total: </span>
           <span className="font-semibold text-emerald-700">{formatCurrency(totalAmount)}</span>
         </div>
       </div>
@@ -187,7 +313,12 @@ export default function ReimbursementsPage() {
           </div>
         ) : items.length === 0 ? (
           <div className="text-center py-12 text-slate-500">
-            No reimbursements for this month.
+            No reimbursements found.{" "}
+            {hasActiveFilters && (
+              <button onClick={clearFilters} className="text-indigo-600 hover:underline">
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
